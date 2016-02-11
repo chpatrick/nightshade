@@ -1,97 +1,140 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances#-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Nightshade.Ugly where
 
-import Text.Printf
-import Text.PrettyPrint.HughesPJClass
-
+import Control.Lens hiding (indexing)
+import Data.Data
+import Data.Data.Lens
+import Data.List
+import qualified Data.HashMap.Strict as HMS
 import Language.GLSL.Syntax
+import Text.PrettyPrint.HughesPJClass
+import Text.Printf
+
+import Nightshade.Analysis
+import Nightshade.Types
+
+shortNames :: [ String ]
+shortNames = map (:[]) alphabet ++ (concat $ transpose $ map (\l -> map (l:) shortNames) alphabet)
+  where
+    alphabet = ['a'..'z'] ++ ['A'..'Z']
+
+type NameMapping = HMS.HashMap String String
+
+nameMapping :: [ Name ] -> NameMapping
+nameMapping names = HMS.fromList $ zip internal shortNames
+  where
+    internal = [ n | ( n, e ) <- HMS.toList $ HMS.fromListWith (||) names, not e ]
+
+applyMapping :: Data s => NameMapping -> s -> s
+applyMapping nm = updateFuncs . updateExprs . updateDecls
+  where
+    mapName n = HMS.lookupDefault n n nm
+    updateDecls = over template (\(InitDecl n ce ae) -> InitDecl (mapName n) ce ae)
+    updateExprs = transformOnOf template uniplate $ \case
+      Variable n -> Variable (HMS.lookupDefault n n nm)
+      FunctionCall (FuncId n) ps -> FunctionCall (FuncId (mapName n)) ps
+      e -> e
+    updateParam = \case
+      ParameterDeclaration a b c (Just ( n, d ))
+        -> ParameterDeclaration a b c (Just ( mapName n, d ))
+      pd -> pd
+    updateFuncs = over template $ \(FuncProt t fn params) ->
+      FuncProt t (mapName fn) (map updateParam params)
+
+uglify :: TranslationUnit -> String
+uglify tu = renderStyle style { mode = OneLineMode } $ uglyPrint renamed
+  where
+    decls = findDeclarations tu
+    nm = nameMapping decls
+    renamed = applyMapping nm tu
 
 class Ugly a where
-    uglifyPrec :: PrettyLevel -> Rational -> a -> Doc
-    uglifyPrec _ _ = uglify
+    uglyPrintPrec :: PrettyLevel -> Rational -> a -> Doc
+    uglyPrintPrec _ _ = uglyPrint
 
-    uglify :: a -> Doc
-    uglify = uglifyPrec prettyNormal 0
+    uglyPrint :: a -> Doc
+    uglyPrint = uglyPrintPrec prettyNormal 0
 
 uglyBinary :: Ugly a =>
   PrettyLevel -> Rational -> Rational -> String -> a -> a -> Doc
-uglyBinary l p op o e1 e2 = prettyParen (p > op) $
-  uglifyPrec l op e1 <> text o <> uglifyPrec l op e2
+uglyBinary l p op o e1 e2 = maybeParens (p > op) $
+  uglyPrintPrec l op e1 <> text o <> uglyPrintPrec l op e2
 
 option :: Ugly a => Maybe a -> Doc
 option Nothing = empty
-option (Just x) = uglify x
+option (Just x) = uglyPrint x
 
 indexing :: Ugly a => Maybe (Maybe a) -> Doc
 indexing Nothing = empty
 indexing (Just Nothing) = brackets empty
-indexing (Just (Just e)) = brackets $ uglify e
+indexing (Just (Just e)) = brackets $ uglyPrint e
 
 indexing' :: Ugly a => Maybe (String, Maybe a) -> Doc
 indexing' Nothing = empty
 indexing' (Just (i, Nothing)) = text i
-indexing' (Just (i, Just e)) = text i <> brackets (uglify e)
+indexing' (Just (i, Just e)) = text i <> brackets (uglyPrint e)
 
 initialize :: Ugly a => Maybe a -> Doc
 initialize Nothing = empty
-initialize (Just e) = equals <> uglify e
+initialize (Just e) = equals <> uglyPrint e
 
 ident :: Ugly a => Maybe (String, Maybe (Maybe a)) -> Doc
 ident Nothing = empty
 ident (Just (i, Nothing)) = text i
 ident (Just (i, Just Nothing)) = text i <> brackets empty
-ident (Just (i, Just (Just e))) = text i <> brackets (uglify e)
+ident (Just (i, Just (Just e))) = text i <> brackets (uglyPrint e)
 
 initialize' :: Ugly a => Maybe (String, Maybe a) -> Doc
 initialize' Nothing = empty
 initialize' (Just (i, Nothing)) = text i
-initialize' (Just (i, Just e)) = text i <> char '=' <> uglify e
+initialize' (Just (i, Just e)) = text i <> char '=' <> uglyPrint e
 
 ----------------------------------------------------------------------
 -- Ugly instances
 ----------------------------------------------------------------------
 
 instance Ugly String where
-  uglify = pPrint
-  uglifyPrec = pPrintPrec
+  uglyPrint = pPrint
+  uglyPrintPrec = pPrintPrec
 
 instance Ugly TranslationUnit where
-  uglify (TranslationUnit ds) = hcat $ map uglify ds
---  uglify (Alternative p e) = text "(" <> nest 2 (hcat [uglify p, uglify e]) <> text ")"
+  uglyPrint (TranslationUnit ds) = hcat $ map uglyPrint ds
+--  uglyPrint (Alternative p e) = text "(" <> nest 2 (hcat [uglyPrint p, uglyPrint e]) <> text ")"
 
 instance Ugly ExternalDeclaration where
-  uglify (FunctionDeclaration p) = uglify p <> semi
-  uglify (FunctionDefinition p s) = hcat [uglify p, uglify s]
-  uglify (Declaration d) = uglify d
+  uglyPrint (FunctionDeclaration p) = uglyPrint p <> semi
+  uglyPrint (FunctionDefinition p s) = hcat [uglyPrint p, uglyPrint s]
+  uglyPrint (Declaration d) = uglyPrint d
 
 instance Ugly Declaration where
-  uglify (InitDeclaration it ds) = uglify it <+> hcat (punctuate comma (map uglify ds)) <> semi
-  uglify (Precision pq t) = text "precision" <+> uglify pq <+> uglify t <> semi
-  uglify (Block tq i ds n) = hcat [uglify tq <+> text i, lbrace, nest 2 (hcat $ map uglify ds), rbrace <+> ident n <> semi]
-  uglify (TQ tq) = uglify tq <> semi
+  uglyPrint (InitDeclaration it ds) = uglyPrint it <+> hcat (punctuate comma (map uglyPrint ds)) <> semi
+  uglyPrint (Precision pq t) = text "precision" <+> uglyPrint pq <+> uglyPrint t <> semi
+  uglyPrint (Block tq i ds n) = hcat [uglyPrint tq <+> text i, lbrace, nest 2 (hcat $ map uglyPrint ds), rbrace <+> ident n <> semi]
+  uglyPrint (TQ tq) = uglyPrint tq <> semi
 
 instance Ugly InitDeclarator where
-  uglify (InitDecl i a b) = text i <> indexing a <> initialize b
+  uglyPrint (InitDecl i a b) = text i <> indexing a <> initialize b
 
 instance Ugly InvariantOrType where
-  uglify InvariantDeclarator = text "invariant"
-  uglify (TypeDeclarator ft) = uglify ft
+  uglyPrint InvariantDeclarator = text "invariant"
+  uglyPrint (TypeDeclarator ft) = uglyPrint ft
 
 instance Ugly FullType where
-  uglify (FullType tq ts) = option tq <+> uglify ts
+  uglyPrint (FullType tq ts) = option tq <+> uglyPrint ts
 
 instance Ugly TypeQualifier where
-  uglify (TypeQualSto sq) = uglify sq
-  uglify (TypeQualLay lq sq) = uglify lq <+> option sq
-  uglify (TypeQualInt iq sq) = uglify iq <+> option sq
-  uglify (TypeQualInv iq sq) = uglify iq <+> option sq
-  uglify (TypeQualInv3 iq iq' sq) = uglify iq <+> uglify iq' <+> uglify sq
+  uglyPrint (TypeQualSto sq) = uglyPrint sq
+  uglyPrint (TypeQualLay lq sq) = uglyPrint lq <+> option sq
+  uglyPrint (TypeQualInt iq sq) = uglyPrint iq <+> option sq
+  uglyPrint (TypeQualInv iq sq) = uglyPrint iq <+> option sq
+  uglyPrint (TypeQualInv3 iq iq' sq) = uglyPrint iq <+> uglyPrint iq' <+> uglyPrint sq
 
 instance Ugly StorageQualifier where
-  uglify q = case q of
-    Const -> text "const"
+  uglyPrint q = case q of
+    Language.GLSL.Syntax.Const -> text "const"
     Attribute -> text "attribute"
     Varying -> text "varying"
     CentroidVarying -> text "centroid varying"
@@ -102,36 +145,36 @@ instance Ugly StorageQualifier where
     Uniform -> text "uniform"
 
 instance Ugly LayoutQualifier where
-  uglify (Layout is) = text "layout" <+> char '(' <>
-    (hsep $ punctuate comma $ map uglify is) <> char ')'
+  uglyPrint (Layout is) = text "layout" <+> char '(' <>
+    (hsep $ punctuate comma $ map uglyPrint is) <> char ')'
 
 instance Ugly LayoutQualifierId where
-  uglify (LayoutQualId i Nothing) = text i
-  uglify (LayoutQualId i (Just e)) = text i <+> char '=' <+> uglify e
+  uglyPrint (LayoutQualId i Nothing) = text i
+  uglyPrint (LayoutQualId i (Just e)) = text i <+> char '=' <+> uglyPrint e
 
 instance Ugly InterpolationQualifier where
-  uglify q = case q of
+  uglyPrint q = case q of
     Smooth -> text "smooth"
     Flat -> text "flat"
     NoPerspective -> text "noperspective"
 
 instance Ugly InvariantQualifier where
-  uglify Invariant = text "invariant"
+  uglyPrint Invariant = text "invariant"
 
 instance Ugly TypeSpecifier where
-  uglify (TypeSpec (Just pq) t) = uglify pq <+> uglify t
-  uglify (TypeSpec Nothing t) = uglify t
+  uglyPrint (TypeSpec (Just pq) t) = uglyPrint pq <+> uglyPrint t
+  uglyPrint (TypeSpec Nothing t) = uglyPrint t
 
 instance Ugly PrecisionQualifier where
-  uglify HighP = text "highp"
-  uglify MediumP = text "mediump"
-  uglify LowP = text "lowp"
+  uglyPrint HighP = text "highp"
+  uglyPrint MediumP = text "mediump"
+  uglyPrint LowP = text "lowp"
 
 instance Ugly TypeSpecifierNoPrecision where
-  uglify (TypeSpecNoPrecision t a) = uglify t <+> indexing a
+  uglyPrint (TypeSpecNoPrecision t a) = uglyPrint t <+> indexing a
 
 instance Ugly TypeSpecifierNonArray where
-  uglify t = case t of
+  uglyPrint t = case t of
     Void -> text "void"
     Float -> text "float"
     Int -> text "int"
@@ -198,19 +241,19 @@ instance Ugly TypeSpecifierNonArray where
     ISampler2DMSArray -> text "isampler2DMSArray"
     USampler2DMSArray -> text "usampler2DMSArray"
     StructSpecifier i ds ->
-      hcat [text "struct" <+> i', lbrace, nest 2 (hcat $ map uglify ds), rbrace]
+      hcat [text "struct" <+> i', lbrace, nest 2 (hcat $ map uglyPrint ds), rbrace]
       where i' = case i of { Nothing -> empty ; Just n -> text n }
     TypeName i -> text i
 
 instance Ugly Field where
-  uglify (Field tq s ds) =
-    option tq <+> uglify s <+> hsep (punctuate comma $ map uglify ds) <> semi
+  uglyPrint (Field tq s ds) =
+    option tq <+> uglyPrint s <+> hsep (punctuate comma $ map uglyPrint ds) <> semi
 
 instance Ugly StructDeclarator where
-  uglify (StructDeclarator i e) = ident (Just (i, e))
+  uglyPrint (StructDeclarator i e) = ident (Just (i, e))
 
 instance Ugly Expr where
-  uglifyPrec l p e = case e of
+  uglyPrintPrec l p e = case e of
   -- primaryExpression
     Variable v -> text v
     IntConstant Decimal i -> text (show i)
@@ -220,31 +263,31 @@ instance Ugly Expr where
     BoolConstant True -> text "true"
     BoolConstant False -> text "false"
   -- postfixExpression
-    Bracket e1 e2 -> prettyParen (p > 16) $
-      uglifyPrec l 16 e1 <> brackets (uglify e2)
-    FieldSelection e1 f -> prettyParen (p > 16) $
-      uglifyPrec l 16 e1 <> char '.' <> text f
-    MethodCall e1 i ps -> prettyParen (p > 16) $
-      uglifyPrec l 16 e1 <> char '.' <> uglify i <> parens (uglify ps)
-    FunctionCall i ps -> prettyParen (p > 16) $
-      uglify i <> parens (uglify ps)
-    PostInc e1 -> prettyParen (p > 15) $
-      uglifyPrec l 15 e1 <+> text "++"
-    PostDec e1 -> prettyParen (p > 15) $
-      uglifyPrec l 15 e1 <+> text "--"
-    PreInc e1 -> prettyParen (p > 15) $
-      text "++" <+> uglifyPrec l 15 e1
-    PreDec e1 -> prettyParen (p > 15) $
-      text "--" <+> uglifyPrec l 15 e1
+    Bracket e1 e2 -> maybeParens (p > 16) $
+      uglyPrintPrec l 16 e1 <> brackets (uglyPrint e2)
+    FieldSelection e1 f -> maybeParens (p > 16) $
+      uglyPrintPrec l 16 e1 <> char '.' <> text f
+    MethodCall e1 i ps -> maybeParens (p > 16) $
+      uglyPrintPrec l 16 e1 <> char '.' <> uglyPrint i <> parens (uglyPrint ps)
+    FunctionCall i ps -> maybeParens (p > 16) $
+      uglyPrint i <> parens (uglyPrint ps)
+    PostInc e1 -> maybeParens (p > 15) $
+      uglyPrintPrec l 15 e1 <+> text "++"
+    PostDec e1 -> maybeParens (p > 15) $
+      uglyPrintPrec l 15 e1 <+> text "--"
+    PreInc e1 -> maybeParens (p > 15) $
+      text "++" <+> uglyPrintPrec l 15 e1
+    PreDec e1 -> maybeParens (p > 15) $
+      text "--" <+> uglyPrintPrec l 15 e1
   -- unary expression
-    UnaryPlus e1 -> prettyParen (p > 15) $
-      text "+" <> uglifyPrec l 15 e1
-    UnaryNegate e1 -> prettyParen (p > 15) $
-      text "-" <> uglifyPrec l 15 e1
-    UnaryNot e1 -> prettyParen (p > 15) $
-      text "!" <> uglifyPrec l 15 e1
-    UnaryOneComplement e1 -> prettyParen (p > 15) $
-      text "~" <> uglifyPrec l 15 e1
+    UnaryPlus e1 -> maybeParens (p > 15) $
+      text "+" <> uglyPrintPrec l 15 e1
+    UnaryNegate e1 -> maybeParens (p > 15) $
+      text "-" <> uglyPrintPrec l 15 e1
+    UnaryNot e1 -> maybeParens (p > 15) $
+      text "!" <> uglyPrintPrec l 15 e1
+    UnaryOneComplement e1 -> maybeParens (p > 15) $
+      text "~" <> uglyPrintPrec l 15 e1
   -- binary expression
     Mul e1 e2 -> uglyBinary l p 14 "*" e1 e2
     Div e1 e2 -> uglyBinary l p 14 "/" e1 e2
@@ -265,9 +308,9 @@ instance Ugly Expr where
     And e1 e2 -> uglyBinary l p 6 "&&" e1 e2
 -- TODO Xor 5 "^^"
     Or e1 e2 -> uglyBinary l p 4 "||" e1 e2
-    Selection e1 e2 e3 -> prettyParen (p > 3) $
-      uglifyPrec l 3 e1 <> char '?' <> uglifyPrec l 3 e2
-      <> char ':' <> uglifyPrec l 3 e3
+    Selection e1 e2 e3 -> maybeParens (p > 3) $
+      uglyPrintPrec l 3 e1 <> char '?' <> uglyPrintPrec l 3 e2
+      <> char ':' <> uglyPrintPrec l 3 e3
   -- assignment, the left Expr should be unary expression
     Equal e1 e2 -> uglyBinary l p 2 "=" e1 e2
     MulAssign e1 e2 -> uglyBinary l p 2 "*=" e1 e2
@@ -281,63 +324,63 @@ instance Ugly Expr where
     XorAssign e1 e2 -> uglyBinary l p 2 "^=" e1 e2
     OrAssign e1 e2 -> uglyBinary l p 2 "|=" e1 e2
   -- sequence
-    Sequence e1 e2 -> prettyParen (p > 1) $
-      uglifyPrec l 1 e1 <> char ',' <+> uglifyPrec l 1 e2
+    Sequence e1 e2 -> maybeParens (p > 1) $
+      uglyPrintPrec l 1 e1 <> char ',' <+> uglyPrintPrec l 1 e2
 
 instance Ugly FunctionIdentifier where
-  uglify (FuncIdTypeSpec t) = uglify t
-  uglify (FuncId i) = text i
+  uglyPrint (FuncIdTypeSpec t) = uglyPrint t
+  uglyPrint (FuncId i) = text i
 
 instance Ugly Parameters where
-  uglify ParamVoid = empty
-  uglify (Params es) = hcat $ punctuate comma $ map uglify es
+  uglyPrint ParamVoid = empty
+  uglyPrint (Params es) = hcat $ punctuate comma $ map uglyPrint es
 
 instance Ugly FunctionPrototype where
-  uglify (FuncProt t i ps) = uglify t <+> text i <> char '(' <> hcat (punctuate comma $ map uglify ps) <> text ")"
+  uglyPrint (FuncProt t i ps) = uglyPrint t <+> text i <> char '(' <> hcat (punctuate comma $ map uglyPrint ps) <> text ")"
 
 instance Ugly ParameterDeclaration where
-  uglify (ParameterDeclaration tq q s i) =
-    option tq <+> option q <+> uglify s <+> indexing' i
+  uglyPrint (ParameterDeclaration tq q s i) =
+    option tq <+> option q <+> uglyPrint s <+> indexing' i
 
 instance Ugly ParameterTypeQualifier  where
-  uglify ConstParameter = text "const"
+  uglyPrint ConstParameter = text "const"
 
 instance Ugly ParameterQualifier where
-  uglify InParameter = text "in"
-  uglify OutParameter = text "out"
-  uglify InOutParameter = text "inout"
+  uglyPrint InParameter = text "in"
+  uglyPrint OutParameter = text "out"
+  uglyPrint InOutParameter = text "inout"
 
 instance Ugly Statement where
-  uglify s = case s of
+  uglyPrint s = case s of
   -- declaration statement
-    DeclarationStatement d -> uglify d
+    DeclarationStatement d -> uglyPrint d
   -- jump statement
     Continue -> text "continue" <> semi
     Break -> text "break" <> semi
     Return e -> text "return" <+> option e <> semi
     Discard -> text "discard" <> semi
   -- compound statement
-    CompoundStatement c -> uglify c
+    CompoundStatement c -> uglyPrint c
   -- expression statement
     ExpressionStatement e -> option e <> semi
   -- selection statement
-    SelectionStatement e s1 s2 -> hcat [text "if" <> parens (uglify e), nest 2 $ uglify s1, option s2]
+    SelectionStatement e s1 s2 -> hcat [text "if" <> parens (uglyPrint e), nest 2 $ uglyPrint s1, option s2]
   -- switch statement
-    SwitchStatement e s1 -> hcat [text "switch" <> parens (uglify e), lbrace, nest 2 $ hcat $ map uglify s1, rbrace]
-    CaseLabel l -> uglify l
+    SwitchStatement e s1 -> hcat [text "switch" <> parens (uglyPrint e), lbrace, nest 2 $ hcat $ map uglyPrint s1, rbrace]
+    CaseLabel l -> uglyPrint l
   -- iteration statement
-    While c s1 -> hcat [text "while" <> parens (uglify c), uglify s1]
-    DoWhile s1 e -> hcat [text "do", uglify s1, text "while" <+> parens (uglify e)]
-    For (Left e1) c e2 s1 -> hcat [text "for", parens (option e1 <+> semi <+> option c <+> semi <+> option e2), uglify s1]
-    For (Right d) c e2 s1 -> hcat [text "for", parens (uglify d <+> semi <+> option c <+> semi <+> option e2), uglify s1]
+    While c s1 -> hcat [text "while" <> parens (uglyPrint c), uglyPrint s1]
+    DoWhile s1 e -> hcat [text "do", uglyPrint s1, text "while" <+> parens (uglyPrint e)]
+    For (Left e1) c e2 s1 -> hcat [text "for", parens (option e1 <+> semi <+> option c <+> semi <+> option e2), uglyPrint s1]
+    For (Right d) c e2 s1 -> hcat [text "for", parens (uglyPrint d <+> semi <+> option c <+> semi <+> option e2), uglyPrint s1]
 
 instance Ugly Compound where
-  uglify (Compound s) = hcat [lbrace, nest 2 $ hcat $ map uglify s, rbrace]
+  uglyPrint (Compound s) = hcat [lbrace, nest 2 $ hcat $ map uglyPrint s, rbrace]
 
 instance Ugly Condition where
-  uglify (Condition e) = uglify e
-  uglify (InitializedCondition t i e) = uglify t <+> uglify i <+> uglify e
+  uglyPrint (Condition e) = uglyPrint e
+  uglyPrint (InitializedCondition t i e) = uglyPrint t <+> uglyPrint i <+> uglyPrint e
 
 instance Ugly CaseLabel where
-  uglify  (Case e) = text "case" <+> uglify e <> colon
-  uglify Default = text "default:"
+  uglyPrint  (Case e) = text "case" <+> uglyPrint e <> colon
+  uglyPrint Default = text "default:"
