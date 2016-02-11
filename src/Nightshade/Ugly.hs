@@ -17,15 +17,17 @@ import Nightshade.Analysis
 import Nightshade.Types
 
 shortNames :: [ String ]
-shortNames = map (:[]) alphabet ++ (concat $ transpose $ map (\l -> map (l:) shortNames) alphabet)
+shortNames = map (:[]) alphabet ++ (flip (:) <$> shortNames <*> alphabet)
   where
     alphabet = ['a'..'z'] ++ ['A'..'Z']
 
 type NameMapping = HMS.HashMap String String
 
+-- | Assign short names to the names that are only declared internally.
 nameMapping :: [ Name ] -> NameMapping
 nameMapping names = HMS.fromList $ zip internal shortNames
   where
+    -- Find the names that are never external.
     internal = [ n | ( n, e ) <- HMS.toList $ HMS.fromListWith (||) names, not e ]
 
 applyMapping :: Data s => NameMapping -> s -> s
