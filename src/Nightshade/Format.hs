@@ -27,7 +27,7 @@ formatUniforms us
 
 formatShader :: String -> [ Uniform ] -> String -> Doc
 formatShader name uniforms src = vcat
-  [ "namespace" <+> text name <+> lbrace
+  [ "export" <+> "namespace" <+> text name <+> lbrace
   , nest 2 $ vcat
     [ "export" <+> formatUniforms uniforms
     , "export" <+> "const" <+> "Source" <+> equals <+> text (show src)
