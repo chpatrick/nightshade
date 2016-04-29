@@ -7,7 +7,6 @@ module Nightshade.Ugly where
 import Control.Lens hiding (indexing)
 import Data.Data
 import Data.Data.Lens
-import Data.List
 import qualified Data.HashMap.Strict as HMS
 import Language.GLSL.Syntax
 import Text.PrettyPrint.HughesPJClass
@@ -62,8 +61,8 @@ class Ugly a where
 
 uglyBinary :: Ugly a =>
   PrettyLevel -> Rational -> Rational -> String -> a -> a -> Doc
-uglyBinary l p op o e1 e2 = maybeParens (p > op) $
-  uglyPrintPrec l op e1 <> text o <> uglyPrintPrec l op e2
+uglyBinary l p op_ o e1 e2 = maybeParens (p > op_) $
+  uglyPrintPrec l op_ e1 <> text o <> uglyPrintPrec l op_ e2
 
 option :: Ugly a => Maybe a -> Doc
 option Nothing = empty
