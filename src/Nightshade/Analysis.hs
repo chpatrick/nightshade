@@ -5,8 +5,6 @@ module Nightshade.Analysis where
 import Control.Lens
 import Data.Data
 import Data.Data.Lens
-import Data.Foldable
-import Data.List
 import Language.GLSL
 
 import Nightshade.Types
