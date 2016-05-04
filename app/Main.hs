@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings, RecordWildCards #-}
+import Data.Monoid ((<>))
 import Options.Applicative
 
 import Nightshade
