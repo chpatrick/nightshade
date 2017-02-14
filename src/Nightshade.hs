@@ -5,6 +5,7 @@ module Main where
 import Text.PrettyPrint.HughesPJ (render)
 import Language.GLSL
 import Options.Applicative
+import Data.Monoid ((<>))
 
 import Nightshade.Analysis
 import Nightshade.Format
