@@ -9,6 +9,8 @@ packages:
 - location:
     git: https://github.com/chpatrick/language-glsl.git
     commit: 440ccf27af3d9143d726b0e98c80b67cdd5d12e6
+    commit: 8b9bfe7caef0fb3bb288591d25e0e4d73112d96f
+  extra-dep: true
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps: []
