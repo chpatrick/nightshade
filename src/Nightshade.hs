@@ -8,13 +8,12 @@ import Nightshade.Analysis
 import Nightshade.Format
 import Nightshade.Ugly
 
-process ::
-     String -- ^ Namespace to wrap the output in
-  -> Bool -- ^ Whether to uglify
+process
+  :: Bool -- ^ Whether to uglify
   -> String -- ^ Source
   -> Either String String
-process namespace uglifySrc src = do
+process uglifySrc src = do
   ast <- either (Left . show) Right (parse src)
   let processed = if uglifySrc then uglify ast else src
   let uniforms = findUniforms ast
-  return (render ((formatShader namespace) uniforms processed))
+  return (render (formatShader uniforms processed))

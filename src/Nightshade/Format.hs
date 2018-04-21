@@ -25,12 +25,17 @@ formatUniforms us
         Float -> "number"
         t -> error ("Unsupported uniform type" ++ show t)
 
-formatShader :: String -> [ Uniform ] -> String -> Doc
-formatShader name uniforms src = vcat
-  [ "export" <+> "namespace" <+> text name <+> lbrace
-  , nest 2 $ vcat
-    [ "export" <+> formatUniforms uniforms
+formatShader :: [ Uniform ] -> String -> Doc
+formatShader uniforms src =
+  vcat
+    [ vcat
+      [ "export" <+> "interface" <+> "Uniform<T>" <+> lbrace
+      , nest 2 $ vcat
+          [ "type:" <+> "string;"
+          , "value:" <+> "T;"
+          ]
+      , rbrace
+      ]
+    , "export" <+> formatUniforms uniforms
     , "export" <+> "const" <+> "Source" <+> equals <+> text (show src)
     ]
-  , rbrace
-  ]
