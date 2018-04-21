@@ -20,7 +20,7 @@ formatUniforms us
         Vec2 -> "THREE.Vector2"
         Vec3 -> "THREE.Vector3"
         Mat4 -> "THREE.Matrix4"
-        Sampler2D -> "THREE.Texture"
+        Sampler2D -> "THREE.Texture | null"
         Int -> "number"
         Float -> "number"
         t -> error ("Unsupported uniform type" ++ show t)
