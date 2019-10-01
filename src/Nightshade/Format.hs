@@ -19,6 +19,7 @@ formatUniforms us
       formatType = \case
         Vec2 -> "THREE.Vector2"
         Vec3 -> "THREE.Vector3"
+        Mat3 -> "THREE.Matrix3"
         Mat4 -> "THREE.Matrix4"
         Sampler2D -> "THREE.Texture | null"
         Int -> "number"
