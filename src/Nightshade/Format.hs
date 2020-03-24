@@ -1,9 +1,10 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, NoImplicitPrelude #-}
 
 module Nightshade.Format where
 
 import Language.GLSL.Syntax
 import Text.PrettyPrint
+import Prelude hiding ((<>))
 
 import Nightshade.Types
 

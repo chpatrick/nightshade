@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Nightshade.Ugly where
 
@@ -11,6 +12,7 @@ import qualified Data.HashMap.Strict as HMS
 import Language.GLSL.Syntax
 import Text.PrettyPrint.HughesPJClass
 import Text.Printf
+import Prelude hiding ((<>))
 
 import Nightshade.Analysis
 import Nightshade.Types
