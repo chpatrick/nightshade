@@ -25,7 +25,7 @@ formatUniforms us
         Sampler2D -> "THREE.Texture | null"
         Int -> "number"
         Float -> "number"
-        t -> error ("Unsupported uniform type" ++ show t)
+        t -> error ("Unsupported uniform type: " ++ show t)
 
 formatShader :: [ Uniform ] -> String -> Doc
 formatShader uniforms src =
